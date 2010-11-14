@@ -8,11 +8,14 @@
 #include <llvm/System/Path.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/GenericValue.h>
+#include <llvm/System/DynamicLibrary.h>
+#include <llvm/Analysis/Passes.h>
 using namespace llvm;
 using namespace llvm::sys;
 
 int host_method(int x){
-  return x * 3;
+  printf("hello, got x = %i\n", x);
+  return 7 * x;
 }
 
 int main(){
@@ -28,13 +31,11 @@ int main(){
   }
 
   // .. pull in the client-exposed host code.
-  FunctionType *ft = FunctionType::get(Type::getInt32Ty(getGlobalContext()), false);
-  Function::Create(ft, Function::ExternalLinkage, Twine("host_method"), linker->getModule());
-  // this is not working
+  sys::DynamicLibrary::AddSymbol("host_method", (void *)host_method);
 
   // Finalize the module.
   Module *module = linker->releaseModule();
- 
+
   // Make a new interpreter based on that module, and find the client_method.
   ExecutionEngine *engine = EngineBuilder(module).create();
   Function *client_method = engine->FindFunctionNamed("client_method");
@@ -44,9 +45,12 @@ int main(){
   }
 
   // Call the client_method with arguments.
-  std::vector<GenericValue> args(1);
-  args[0].UIntPairVal.first = 4;
-  engine->runFunction(client_method, args);
+  std::vector<GenericValue> args;
+  GenericValue gv;
+  gv.IntVal = APInt(32, 5, true);
+  args.push_back(gv);
+  GenericValue ret = engine->runFunction(client_method, args);
+  printf("result was: %i\n", (int)ret.IntVal.getSExtValue());
 
   return 0;
 }
